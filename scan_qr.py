@@ -2,37 +2,94 @@
 scan_qr.py
 High-speed classical Computer Vision QR & Barcode scanner for Asset Tracker.
 Uses pyzbar + OpenCV VideoCapture to capture and decode frames directly from the webcam.
-Handles GUI and headless environments safely without crashing on imshow/destroyAllWindows.
+Gracefully falls back to OpenCV's built-in QRCodeDetector if pyzbar C libraries are unavailable.
+Handles GUI and headless environments safely without crashing.
 """
 
 import cv2
-from pyzbar.pyzbar import decode
-from typing import Optional
+import numpy as np
+from typing import Optional, Union
+from PIL import Image
+
+# Safe pyzbar import with fallback
+try:
+    from pyzbar.pyzbar import decode as pyzbar_decode
+    PYZBAR_AVAILABLE = True
+except Exception:
+    pyzbar_decode = None
+    PYZBAR_AVAILABLE = False
 
 
 def decode_qr_from_frame(frame) -> Optional[str]:
-    """Decodes QR code from an OpenCV frame (numpy array)."""
+    """
+    Decodes QR code from an OpenCV frame (numpy array).
+    Tries pyzbar first, then falls back to cv2.QRCodeDetector.
+    """
     if frame is None:
         return None
+
+    # 1. Try PyZbar
+    if PYZBAR_AVAILABLE and pyzbar_decode is not None:
+        try:
+            decoded_objects = pyzbar_decode(frame)
+            for obj in decoded_objects:
+                data = obj.data.decode("utf-8").strip()
+                if data:
+                    return data
+        except Exception:
+            pass
+
+    # 2. Fallback to OpenCV QRCodeDetector
     try:
-        decoded_objects = decode(frame)
-        for obj in decoded_objects:
-            data = obj.data.decode("utf-8").strip()
-            if data:
-                return data
+        detector = cv2.QRCodeDetector()
+        data, bbox, _ = detector.detectAndDecode(frame)
+        if data and str(data).strip():
+            return str(data).strip()
     except Exception:
         pass
+
+    return None
+
+
+def decode_qr_from_image(image_input: Union[Image.Image, np.ndarray, bytes, any]) -> Optional[str]:
+    """
+    Decodes QR code from a PIL Image, file buffer (Streamlit camera_input/file_uploader), or numpy array.
+    """
+    if image_input is None:
+        return None
+
+    try:
+        # If it's a PIL Image
+        if isinstance(image_input, Image.Image):
+            frame = cv2.cvtColor(np.array(image_input), cv2.COLOR_RGB2BGR)
+            return decode_qr_from_frame(frame)
+
+        # If it's a Streamlit UploadedFile or BytesIO
+        if hasattr(image_input, "read") or hasattr(image_input, "getvalue"):
+            pil_img = Image.open(image_input)
+            frame = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+            return decode_qr_from_frame(frame)
+
+        # If it's already a numpy array
+        if isinstance(image_input, np.ndarray):
+            return decode_qr_from_frame(image_input)
+    except Exception:
+        pass
+
     return None
 
 
 def scan_qr_from_webcam(camera_index: int = 0, timeout_seconds: int = 20) -> Optional[str]:
     """
-    Opens the laptop webcam, reads frames, decodes QR code with pyzbar,
+    Opens the laptop webcam, reads frames, decodes QR code with pyzbar/OpenCV,
     and returns scanned string as soon as a QR code is detected.
-    Safe against headless OpenCV environments.
+    Safe against headless environments and server-side timeouts.
     """
-    cap = cv2.VideoCapture(camera_index)
-    if not cap.isOpened():
+    try:
+        cap = cv2.VideoCapture(camera_index)
+        if not cap.isOpened():
+            return None
+    except Exception:
         return None
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
@@ -65,8 +122,8 @@ def scan_qr_from_webcam(camera_index: int = 0, timeout_seconds: int = 20) -> Opt
 
             frames_checked += 1
     finally:
-        cap.release()
         try:
+            cap.release()
             cv2.destroyAllWindows()
         except Exception:
             pass
