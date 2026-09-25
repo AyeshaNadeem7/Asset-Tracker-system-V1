@@ -92,3 +92,17 @@ laptop lending system/
 
 - **QR Barcode Stickers**: Print the tags generated in the **QR Asset Tag Studio** (or via `python generate_qr.py`) and adhere them to the lid/base of each laptop.
 - **Biometric Fingerprint Scanner**: Plug any standard USB fingerprint device into the checkpoint PC. In standard HID keyboard emulation mode, scanning a finger will type the enrolled student ID directly into the input field.
+
+---
+
+## ⚠️ System Limitations & Deployment Notes
+
+1. **Hardware Camera Access on Cloud Deployments:**
+   - **Localhost:** The OpenCV-based webcam QR scanner (`cv2.VideoCapture`) connects directly to your laptop/desktop camera for high-speed local scanning.
+   - **Cloud Platforms (Streamlit Cloud, AWS, Heroku):** The Python code runs on a remote cloud server that has **no physical camera hardware attached**. Therefore, clicking the local camera button on cloud-hosted deployments will not open your device's webcam. The system is architected primarily for on-premise local checkpoint stations.
+
+2. **Ephemeral Local Database on Cloud Containers:**
+   - The project uses a local SQLite database (`lendtrack.db`). On free cloud platforms like Streamlit Cloud, containers are **ephemeral** and reset to the GitHub repository version upon app restarts or idle sleep. For continuous online production use, connect the system to an external cloud database (e.g., Supabase, PostgreSQL).
+
+3. **Physical Biometric USB Devices:**
+   - Hardware biometric fingerprint scanners (USB HID mode) require a direct physical USB connection to the host machine running the kiosk station.
